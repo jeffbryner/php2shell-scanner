@@ -954,7 +954,7 @@ def check_vulnerability(
     custom_headers: Optional[Dict[str, str]] = None,
     sapi: str = "auto",
     paths: Optional[List[str]] = None,
-) -> dict:
+) -> List[dict]:
     display_host = safe_url_label(host)
     try:
         normalized = normalize_url(host)
@@ -962,15 +962,15 @@ def check_vulnerability(
         result = base_result(display_host)
         result["error"] = str(exc)
         result["reason"] = str(exc)
-        return result
+        return [result]
 
     targets = (
         [replace_path(normalized, path) for path in paths] if paths else [normalized]
     )
-    fallback: Optional[dict] = None
-    fallback_priority = {"NO SIGNAL": 0, "FIXED": 1, "INCONCLUSIVE": 2, "ERROR": 2}
-    for target_url in targets:
-        result = check_url(
+    # Test every path independently and report one result per path. A missing
+    # or erroring path must never stop the host or mask another path's verdict.
+    return [
+        check_url(
             normalized,
             target_url,
             timeout,
@@ -978,13 +978,8 @@ def check_vulnerability(
             custom_headers or {},
             sapi,
         )
-        if result["vulnerable"] is True:
-            return result
-        if fallback is None or fallback_priority.get(
-            result["verdict"], 0
-        ) > fallback_priority.get(fallback["verdict"], 0):
-            fallback = result
-    return fallback or base_result(normalized)
+        for target_url in targets
+    ]
 
 
 def load_lines(path: str, label: str) -> List[str]:
@@ -1215,7 +1210,7 @@ def main() -> None:
     vulnerable_count = 0
     error_count = 0
 
-    def scan(host: str) -> dict:
+    def scan(host: str) -> List[dict]:
         try:
             return check_vulnerability(
                 host,
@@ -1229,17 +1224,18 @@ def main() -> None:
             result = base_result(safe_url_label(host))
             result["error"] = f"unexpected error: {exc}"
             result["reason"] = result["error"]
-            return result
+            return [result]
 
     if len(hosts) > 1:
         for probe in PROBES:
             build_probe_body(*probe)
 
     if len(hosts) == 1:
-        result = scan(hosts[0])
-        results.append(result)
-        if not args.quiet or result["vulnerable"] is True:
-            print_result(result, args.verbose)
+        host_results = scan(hosts[0])
+        for result in host_results:
+            results.append(result)
+            if not args.quiet or result["vulnerable"] is True:
+                print_result(result, args.verbose)
     else:
         with ThreadPoolExecutor(max_workers=args.threads) as executor:
             futures = {executor.submit(scan, host): host for host in hosts}
@@ -1251,18 +1247,18 @@ def main() -> None:
                 disable=args.quiet,
             ) as progress:
                 for future in as_completed(futures):
-                    result = future.result()
-                    results.append(result)
+                    for result in future.result():
+                        results.append(result)
 
-                    should_print = result["vulnerable"] is True or (
-                        not args.quiet and args.verbose
-                    )
-                    if should_print:
-                        if args.quiet:
-                            print_result(result, args.verbose)
-                        else:
-                            with tqdm.external_write_mode():
+                        should_print = result["vulnerable"] is True or (
+                            not args.quiet and args.verbose
+                        )
+                        if should_print:
+                            if args.quiet:
                                 print_result(result, args.verbose)
+                            else:
+                                with tqdm.external_write_mode():
+                                    print_result(result, args.verbose)
                     progress.update(1)
 
     vulnerable_count = sum(result["vulnerable"] is True for result in results)

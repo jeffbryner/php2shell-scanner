@@ -10,7 +10,7 @@ A target is reported vulnerable when the probe produces a PHP memory-exhaustion 
 
 Every vulnerable result carries a `confirmation` field recording how the verdict was reached. `probe` means a crafted probe crashed the request handler. `version-only` means the probe did not confirm exploitability (it was rejected, or no crash was observed) but the advertised PHP version is unpatched. A companion `probe_result` field records what the probes did, so a version-only verdict still reports the probe outcome. End-of-life branches below the oldest supported family (anything before 8.2) have no official fix and are treated as unpatched.
 
-The scanner tests `/index.php` by default. A path supplied in the URL is preserved, and `--path` or `--path-file` can test custom paths. phpMyAdmin targets are automatically retested at `/show_config_errors.php`. Redirects are not followed.
+The scanner tests `/index.php` by default. A path supplied in the URL is preserved, and `--path` or `--path-file` can test custom paths. When multiple paths are given, each path is tested independently and reported as its own result, so a missing or erroring path (for example a 404 on `/index.php`) never stops the host or masks another path's verdict. phpMyAdmin targets are automatically retested at `/show_config_errors.php`. Redirects are not followed.
 
 ### SAPI Modes
 
@@ -18,7 +18,7 @@ The default `--sapi auto` mode applies both mod_php and PHP-FPM verdict rules, m
 
 ### Network Impact
 
-Each tested path may receive a 42-byte control request and three probes totalling about 29 MiB. Probing stops as soon as the verdict is settled, and duplicate input URLs are scanned once.
+Each tested path may receive a 42-byte control request and three probes totalling about 29 MiB. Within a single path, probing stops as soon as that path's verdict is settled. Every supplied path is tested, so a host scanned with N paths may receive up to N times that traffic. Duplicate input URLs are scanned once.
 
 ## Requirements
 
