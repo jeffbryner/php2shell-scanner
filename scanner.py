@@ -138,6 +138,22 @@ def has_header(headers: Dict[str, str], name: str) -> bool:
     return any(key.lower() == name.lower() for key in headers)
 
 
+def behind_cache_proxy(response: HTTPResult) -> bool:
+    """True if the response shows a Varnish/cache layer in front of the origin.
+
+    An empty-body HTTP 500 from such a layer is a synthetic cache/proxy error,
+    not evidence that PHP crashed, so it must not be read as a crash signal.
+    """
+    for name, value in response.headers.items():
+        lname = name.lower()
+        if lname in ("x-varnish", "x-varnish-cache"):
+            return True
+        if lname in ("via", "server", "x-cache", "x-served-by", "x-powered-by"):
+            if "varnish" in value.lower():
+                return True
+    return False
+
+
 def set_header(headers: Dict[str, str], name: str, value: str) -> None:
     for key in list(headers):
         if key.lower() == name.lower():
@@ -642,7 +658,13 @@ def crash_signal(
             "parsing the multipart body",
         )
 
-    if probe.status_code == 500 and control.body and not probe.body:
+    if (
+        probe.status_code == 500
+        and control.body
+        and not probe.body
+        and not behind_cache_proxy(probe)
+        and not behind_cache_proxy(control)
+    ):
         mode = (
             "PHP-FPM"
             if sapi == "fpm"

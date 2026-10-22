@@ -107,4 +107,6 @@ On specific PHP configurations, the scanner may report a false positive when its
 
 This was reproduced on patched PHP 8.4.27 with `memory_limit` values from **2M to 32M**, and on PHP 8.3.36 at **128M** when `max_multipart_body_parts` is set to **2785 or higher**. The exact threshold may vary between builds.
 
-When PHP does not disclose its version, the scanner cannot distinguish this safe post-patch OOM from the vulnerable pre-patch behavior. Results should therefore be verified against the installed PHP version and any vendor backports
+When PHP does not disclose its version, the scanner cannot distinguish this safe post-patch OOM from the vulnerable pre-patch behavior. Results should therefore be verified against the installed PHP version and any vendor backports.
+
+A caching proxy such as Varnish can return its own empty HTTP 500 when it rejects or fails on the large multipart probe, with no PHP involved. The empty-body 500 differential would otherwise read that as a crash. The scanner now suppresses that differential when the response carries Varnish or cache markers (`X-Varnish`, or `varnish` in `Via`, `Server`, or `X-Cache`); the stronger in-band PHP fatal-error signature is still honored behind a cache. A proxy that returns an empty 500 without any recognizable cache marker can still produce a false positive, so confirm such verdicts against the origin.
