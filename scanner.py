@@ -611,6 +611,12 @@ def version_verdict(powered_by: str) -> Optional[str]:
     major, minor, patch = (int(value) for value in match.groups())
     fixed_patch = FIXED_VERSIONS.get((major, minor))
     if fixed_patch is None:
+        # Branches older than the lowest patched family are end-of-life and
+        # never received an official fix, so treat them as vulnerable. Newer
+        # unknown branches stay undecided.
+        lowest_fixed = min(FIXED_VERSIONS)
+        if (major, minor) < lowest_fixed:
+            return "VULNERABLE"
         return None
     return "FIXED" if patch >= fixed_patch else "VULNERABLE"
 
@@ -727,6 +733,8 @@ def base_result(host: str) -> dict:
         "host": host,
         "vulnerable": None,
         "verdict": "ERROR",
+        "confirmation": None,
+        "probe_result": None,
         "status_code": None,
         "error": None,
         "reason": None,
@@ -879,6 +887,11 @@ def check_url(
         if signal:
             result["vulnerable"] = True
             result["verdict"] = "VULNERABLE"
+            result["confirmation"] = "probe"
+            result["probe_result"] = (
+                f"probe {index} ({size_mib} MiB, {parts} parts) crashed the "
+                f"request handler: {signal}"
+            )
             result["sapi"] = detected_sapi
             result["reason"] = (
                 f"probe {index} ({size_mib} MiB, {parts} parts) crashed the "
@@ -895,17 +908,26 @@ def check_url(
             )
             return result
 
+    if rejected:
+        probe_result = rejected_reason
+    else:
+        probe_result = "probes completed without a crash signal"
+    result["probe_result"] = probe_result
+
     by_version = version_verdict(powered_by)
     result["powered_by"] = powered_by or None
     if by_version == "VULNERABLE":
         result["vulnerable"] = True
         result["verdict"] = "VULNERABLE"
+        result["confirmation"] = "version-only"
         result["sapi"] = (
             "unknown" if sapi == "auto" else "PHP-FPM" if sapi == "fpm" else "mod_php"
         )
         result["reason"] = (
-            "no crash observed; X-Powered-By reports an unpatched release: "
+            "X-Powered-By reports an unpatched release ("
             + powered_by
+            + "), but the probe did not confirm exploitability: "
+            + probe_result
         )
     elif by_version == "FIXED":
         result["vulnerable"] = False
@@ -1044,6 +1066,13 @@ def print_result(result: dict, verbose: bool = False) -> None:
         details.append(f"SAPI: {result['sapi']}")
     if verdict:
         details.append(f"Verdict: {verdict}")
+    if result.get("confirmation"):
+        label = (
+            "probe-confirmed"
+            if result["confirmation"] == "probe"
+            else "version-only, probe unconfirmed"
+        )
+        details.append(f"Confirmation: {label}")
     suffix = " - " + " - ".join(details) if details else ""
     print(f"{status} {colorize(terminal_safe(host), Colors.WHITE)}{suffix}")
 

@@ -8,6 +8,8 @@ The scanner sends a minimal multipart control request followed by up to three cr
 
 A target is reported vulnerable when the probe produces a PHP memory-exhaustion error, a differential empty HTTP 500, a PHP-FPM worker failure, or an advertised PHP version known to be unpatched. Initial 5xx responses, common request-rejection statuses, and nonempty HTTP 500 responses without the PHP fatal-error signature are not treated as crash signals.
 
+Every vulnerable result carries a `confirmation` field recording how the verdict was reached. `probe` means a crafted probe crashed the request handler. `version-only` means the probe did not confirm exploitability (it was rejected, or no crash was observed) but the advertised PHP version is unpatched. A companion `probe_result` field records what the probes did, so a version-only verdict still reports the probe outcome. End-of-life branches below the oldest supported family (anything before 8.2) have no official fix and are treated as unpatched.
+
 The scanner tests `/index.php` by default. A path supplied in the URL is preserved, and `--path` or `--path-file` can test custom paths. phpMyAdmin targets are automatically retested at `/show_config_errors.php`. Redirects are not followed.
 
 ### SAPI Modes
