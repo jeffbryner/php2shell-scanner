@@ -795,7 +795,9 @@ def check_url(
     custom_headers: Dict[str, str],
     sapi: str,
 ) -> dict:
-    result = base_result(host)
+    # Label the result with the URL actually probed, not the normalized origin
+    # (which carries the default /index.php and would mislabel a custom --path).
+    result = base_result(target_url)
     result["tested_url"] = target_url
     result["final_url"] = target_url
 
